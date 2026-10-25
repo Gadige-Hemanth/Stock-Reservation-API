@@ -1,86 +1,99 @@
 # Stock Reservation API
 
-A REST API built with Java, Spring Boot, Spring Data JPA, and a persistent SQL database to manage product inventory and stock reservations.
+A REST API built with Java, Spring Boot, Spring Data JPA, and MySQL to manage product inventory and stock reservations.
 
-The API supports creating reservations for multiple products, confirming reservations, cancelling active reservations, and maintaining strict stock consistency under high concurrency.
-
----
+The API supports creating reservations for multiple products, confirming reservations, cancelling active reservations, and maintaining stock consistency.
 
 ## Features
-- **Retrieve product inventory**: View total, reserved, and available stock for all products.
-- **Atomic multi-item reservations**: Create reservations containing one or more products with all-or-nothing stock holds.
-- **Validation**: Strict validation for product IDs, positive quantities, and available stock.
-- **Prevent overselling**: Database transactions and pessimistic locking (`SELECT ... FOR UPDATE`) prevent concurrent requests from overselling limited stock.
-- **Deadlock prevention**: Ascending order lock acquisition across multi-item requests.
-- **Confirm active reservations**: Deduct total and reserved stock to complete the purchase.
-- **Cancel active reservations**: Release held stock back to available warehouse inventory.
-- **Idempotency**: Repeating confirmation on confirmed reservations or cancellation on cancelled reservations does not modify inventory twice.
-- **State machine enforcement**: Strict state lifecycle (`ACTIVE -> CONFIRMED`, `ACTIVE -> CANCELLED`). Disallows confirming cancelled reservations or cancelling confirmed reservations.
-- **Persistent storage across restarts**: Live warehouse inventory and reservations survive application restarts.
 
----
+- Retrieve available product inventory.
+- Create a reservation containing one or more products.
+- Validate product IDs and requested quantities.
+- Prevent reservations when stock is insufficient.
+- Confirm active reservations.
+- Cancel active reservations and release reserved stock.
+- Prevent stock from being released more than once when a cancellation is repeated.
+- Handle invalid reservation state transitions.
+- Persist inventory and reservation data in MySQL.
+- Use database transactions and pessimistic locking to help prevent concurrent requests from reserving the same stock.
 
 ## Technology Stack
-- **Java**: Version 21 (or 17+)
-- **Framework**: Spring Boot 3.3.4
-- **Web**: Spring Web MVC
-- **Persistence**: Spring Data JPA / Hibernate
-- **Database**: 
-  - **Default**: Relational SQL (File-backed H2 at `./data/inventorydb`) with full transactional ACID support (Zero external setup or installation required).
-  - **Production/Optional**: MySQL 8 / PostgreSQL (via Docker Compose profile).
-- **Build Tool**: Maven & Maven Wrapper (`mvnw`, `mvnw.cmd`)
-- **Validation**: Jakarta Bean Validation (`@Valid`, `@NotNull`, `@Min`)
-- **API Documentation**: OpenAPI / Swagger UI
-- **Testing**: JUnit 5, Spring Boot Test, Multi-threaded Concurrency Execution
 
----
+- Java 21
+- Spring Boot 3.3.4
+- Spring Web MVC
+- Spring Data JPA / Hibernate
+- MySQL 8 / H2 persistent database
+- Maven and Maven Wrapper
+- Jakarta Bean Validation
+- JUnit and Mockito
 
 ## Prerequisites
-- Java 21 (or Java 17+)
-- Git
+
+Install the following:
+
+- Java 21
+- MySQL 8
+- Git (if cloning the repository)
 
 Verify Java and Maven Wrapper availability:
+
 ```bash
 java -version
-./mvnw.cmd -version    # Windows
-./mvnw -version        # macOS/Linux
+./mvnw -version
 ```
-
----
 
 ## Database Setup
 
-### Default Setup (File-backed SQL - Ready Out-of-the-Box)
-By default, the application is pre-configured to use a persistent file-backed SQL database stored on disk at `./data/inventorydb.mv.db`. **No external database server installation or setup is required.** All stock and reservation mutations persist across application restarts.
+Create the development database in MySQL:
 
-### Optional Setup (MySQL 8)
-If you prefer running against a local MySQL server:
-1. Create the MySQL database:
-   ```sql
-   CREATE DATABASE stock_reservation;
-   ```
-2. Set environment variables or configure `application.properties`:
-   ```properties
-   spring.datasource.url=jdbc:mysql://localhost:3306/stock_reservation
-   spring.datasource.username=root
-   spring.datasource.password=your_password
-   spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
-   ```
+```sql
+CREATE DATABASE stock_reservation;
+```
 
----
+Create a MySQL user for the application if you do not already have one. Grant it the necessary privileges on the development database.
 
-## Sample Inventory (Seed Data)
-On initial startup, if the database is empty, the application automatically seeds the exact catalog specified in the assignment brief:
+Configure the database connection using environment variables.
 
-| ID | SKU | Product Name | Total Stock | Reserved Stock | Available Stock |
-|---|---|---|---|---|---|
-| 1 | `NOTE-001` | Notebook | 10 | 0 | 10 |
-| 2 | `PEN-001` | Pen | 5 | 0 | 5 |
-| 3 | `BAG-001` | Backpack | 2 | 0 | 2 |
+macOS/Linux terminal:
 
-*Note: Seed data runs conditionally (`count() == 0`) and never resets live stock when the application restarts.*
+```bash
+export DB_USERNAME=reservation_app
+export DB_PASSWORD='your_mysql_password'
+```
 
----
+Windows PowerShell:
+
+```powershell
+$env:DB_USERNAME="reservation_app"
+$env:DB_PASSWORD="your_mysql_password"
+```
+
+Replace the example password with the password configured for your MySQL user.
+
+The application uses these connection settings:
+
+```properties
+spring.datasource.url=${DB_URL:jdbc:mysql://localhost:3306/stock_reservation}
+spring.datasource.username=${DB_USERNAME:root}
+spring.datasource.password=${DB_PASSWORD}
+```
+
+The default database URL can be overridden using `DB_URL`. The username defaults to `root` if `DB_USERNAME` is not set.
+
+### Sample Inventory
+
+After the application creates the `products` table, you can insert sample inventory:
+
+```sql
+INSERT INTO products (sku, name, total_stock, reserved_stock)
+VALUES
+('LAPTOP-001', 'Laptop', 10, 0),
+('MOUSE-001', 'Wireless Mouse', 20, 0),
+('KEYBOARD-001', 'Keyboard', 15, 0);
+```
+
+Run the insert statement only when these SKUs do not already exist.
 
 ## Run the Application
 
@@ -94,154 +107,78 @@ From the project root:
 ./mvnw spring-boot:run
 ```
 
-The application starts on port **`8080`**.
-
-Interactive Swagger documentation is available at:
-👉 **`http://localhost:8080/swagger-ui.html`**
-
-Database Web Console is available at:
-👉 **`http://localhost:8080/h2-console`** *(JDBC URL: `jdbc:h2:file:./data/inventorydb`, User: `sa`, Password: blank)*
-
----
+The application uses port `8080` by default.
 
 ## API Endpoints
 
 ### 1. List Products
-`GET /api/products` (or `/api/inventory`)
+
+```http
+GET /api/products
+```
 
 Returns the products and their inventory information.
 
-**Sample Response (`200 OK`):**
-```json
-[
-  {
-    "id": 1,
-    "sku": "NOTE-001",
-    "name": "Notebook",
-    "totalStock": 10,
-    "reservedStock": 0,
-    "availableStock": 10
-  },
-  {
-    "id": 2,
-    "sku": "PEN-001",
-    "name": "Pen",
-    "totalStock": 5,
-    "reservedStock": 0,
-    "availableStock": 5
-  },
-  {
-    "id": 3,
-    "sku": "BAG-001",
-    "name": "Backpack",
-    "totalStock": 2,
-    "reservedStock": 0,
-    "availableStock": 2
-  }
-]
+### 2. Create a Reservation
+
+```http
+POST /api/reservations
+Content-Type: application/json
 ```
 
----
+Example request:
 
-### 2. Create a Reservation
-`POST /api/reservations`  
-`Content-Type: application/json`
-
-Example request (Reserve 3 Notebooks and 2 Pens):
 ```json
 {
   "items": [
     {
       "productId": 1,
-      "quantity": 3
+      "quantity": 2
     },
     {
       "productId": 2,
-      "quantity": 2
+      "quantity": 1
     }
   ]
 }
 ```
 
-**Sample Response (`201 Created`):**
-```json
-{
-  "id": 1,
-  "status": "ACTIVE",
-  "createdAt": "2026-10-25T17:30:00",
-  "updatedAt": "2026-10-25T17:30:00",
-  "items": [
-    { "productId": 1, "sku": "NOTE-001", "productName": "Notebook", "quantity": 3 },
-    { "productId": 2, "sku": "PEN-001", "productName": "Pen", "quantity": 2 }
-  ]
-}
-```
-*The product IDs must exist in the database, and the requested quantities must be positive and available. If any single item is short of stock, the entire request fails atomically.*
+The product IDs must exist in the database, and the requested quantities must be positive and available.
 
----
+### 3. Confirm a Reservation
 
-### 3. Retrieve Reservation by ID
-`GET /api/reservations/{id}`
-
-Returns the reservation identifier, current status, items, quantities, and audit timestamps.
-
----
-
-### 4. Confirm a Reservation
-`POST /api/reservations/{id}/confirm`
-
-Confirms an active reservation: reduces `totalStock` and `reservedStock` by reserved quantities, completing the purchase. Repeating confirmation on an already confirmed reservation is idempotent and returns the existing state without modifying inventory twice.
-
-**Sample Response (`200 OK`):**
-```json
-{
-  "id": 1,
-  "status": "CONFIRMED"
-}
+```http
+PUT /api/reservations/{reservationId}/confirm
 ```
 
----
+Confirms an active reservation. Repeating confirmation for an already confirmed reservation is intended to be idempotent.
 
-### 5. Cancel a Reservation
-`POST /api/reservations/{id}/cancel`
+### 4. Cancel a Reservation
 
-Cancels an active reservation: releases reserved stock back to available warehouse inventory. Repeating cancellation is idempotent and does not release stock a second time.
-
-**Sample Response (`200 OK`):**
-```json
-{
-  "id": 1,
-  "status": "CANCELLED"
-}
+```http
+PUT /api/reservations/{reservationId}/cancel
 ```
 
----
+Cancels an active reservation and releases its reserved stock. Repeating cancellation must not release stock a second time.
 
 ## Error Handling
 
-The API validates request data, product availability, and lifecycle state rules using standard HTTP status codes:
+The API validates request fields and checks product availability and reservation states.
 
-- **`400 Bad Request`**: Validation failures (empty items list, negative or zero quantities).
-- **`404 Not Found`**: Non-existent product ID or reservation ID.
-- **`409 Conflict`**: Insufficient stock for one or more requested items (Atomic failure).
-- **`409 Conflict`**: Invalid state transitions (attempting to confirm a cancelled reservation or cancel a confirmed reservation).
+Expected error scenarios include:
 
-Example error response:
-```json
-{
-  "timestamp": "2026-10-25T17:32:00",
-  "status": 409,
-  "error": "Conflict",
-  "message": "Insufficient available stock for SKU 'BAG-001' (Backpack). Available: 2, Requested: 3",
-  "path": "/api/reservations"
-}
-```
+- Invalid request data.
+- A product ID that does not exist.
+- Insufficient inventory.
+- A reservation ID that does not exist.
+- An invalid reservation state transition.
 
----
+Check the actual HTTP status codes and response bodies returned by the implementation when testing these scenarios.
 
 ## Run Tests
 
-Run the full automated test suite:
+Run the full test suite:
+
 ```bash
 # Windows
 .\mvnw.cmd test
@@ -250,7 +187,8 @@ Run the full automated test suite:
 ./mvnw test
 ```
 
-Build and package the project:
+Build the project:
+
 ```bash
 # Windows
 .\mvnw.cmd clean package
@@ -259,72 +197,64 @@ Build and package the project:
 ./mvnw clean package
 ```
 
-### Test Coverage Highlights:
-- **`testSuccessfulLifecycle`**: Creates, retrieves, and confirms multi-product reservations.
-- **`testCancellationLifecycle`**: Cancels reservations and verifies stock release.
-- **`testAtomicFailure`**: Confirms that one unavailable product aborts the entire transaction with zero inventory changes.
-- **`testInvalidRequestsAndTransitions`**: Exercises invalid states, missing IDs, and validation rules.
-- **`testIdempotency`**: Verifies repeated confirm/cancel calls never double-modify inventory.
-- **`testConcurrencyCompetingRequests`**: Multi-threaded test with simultaneous threads competing for limited backpack stock; verifies pessimistic locking prevents overselling.
+The test suite includes unit tests and database-backed integration tests. The integration tests use a separate test database to avoid modifying development inventory.
 
----
+### Test Database
 
-## Example Demo Sequence (cURL)
+Create the test database:
 
-1. **View inventory**:
-   ```bash
-   curl -X GET http://localhost:8080/api/products
-   ```
-2. **Create reservation (3 Notebooks, 2 Pens)**:
-   ```bash
-   curl -X POST http://localhost:8080/api/reservations \
-     -H "Content-Type: application/json" \
-     -d '{"items":[{"productId":1,"quantity":3},{"productId":2,"quantity":2}]}'
-   ```
-3. **Verify hold**:
-   ```bash
-   curl -X GET http://localhost:8080/api/products
-   ```
-4. **Confirm reservation**:
-   ```bash
-   curl -X POST http://localhost:8080/api/reservations/1/confirm
-   ```
-5. **Verify final sale**:
-   ```bash
-   curl -X GET http://localhost:8080/api/products
-   ```
-6. **Trigger atomic failure (Request 3 backpacks when only 2 exist)**:
-   ```bash
-   curl -X POST http://localhost:8080/api/reservations \
-     -H "Content-Type: application/json" \
-     -d '{"items":[{"productId":3,"quantity":3}]}'
-   ```
+```sql
+CREATE DATABASE stock_reservation_test;
+```
 
----
+Configure `src/test/resources/application.properties` to use `stock_reservation_test`. Ensure the configured MySQL user has the necessary privileges.
+
+The current test configuration uses Hibernate schema generation. **Back up any important data in the test database before running tests**, because schema generation may recreate tables.
+
+For the concurrency test, run:
+
+```bash
+./mvnw -Dtest=StockReservationApiIntegrationTest#testConcurrencyCompetingRequests test
+```
+
+## Example Demo Sequence
+
+1. Start MySQL and configure the database credentials.
+2. Start the Spring Boot application.
+3. Retrieve inventory using `GET /api/products`.
+4. Create a reservation using `POST /api/reservations`.
+5. Confirm it using `PUT /api/reservations/{reservationId}/confirm`, or cancel an active reservation using the cancellation endpoint.
+6. Retrieve inventory again and verify the stock changes.
+7. Run the test suite using `./mvnw test`.
 
 ## Project Structure
 
-```
+```text
 stock-reservation-api/
 ├── src/
 │   ├── main/
 │   │   ├── java/
 │   │   │   └── com/analyticalrx/inventory/
-│   │   │       ├── config/              # DataLoader (seed data initialization)
-│   │   │       ├── controller/          # REST Controllers
-│   │   │       ├── dto/                 # Request & Response DTOs
-│   │   │       ├── exception/           # Custom Exceptions & GlobalExceptionHandler
-│   │   │       ├── model/               # JPA Entities (Product, Reservation, etc.)
-│   │   │       ├── repository/          # Spring Data JPA Repositories (Pessimistic Locking)
-│   │   │       ├── service/             # InventoryService (Business & Concurrency Logic)
-│   │   │       └── StockReservationApiApplication.java
+│   │   │       ├── config/
+│   │   │       ├── controller/
+│   │   │       ├── dto/
+│   │   │       ├── exception/
+│   │   │       ├── model/
+│   │   │       ├── repository/
+│   │   │       └── service/
 │   │   └── resources/
 │   │       ├── application.properties
 │   │       └── application-postgres.properties
 │   └── test/
-│       └── java/
-│           └── com/analyticalrx/inventory/
-│               └── StockReservationApiIntegrationTest.java
+│       ├── java/
+│       │   └── com/analyticalrx/inventory/
+│       │       └── StockReservationApiIntegrationTest.java
+│       └── resources/
+├── output ss/
+│   ├── 01-product-inventory.png
+│   ├── 02-create-reservation.png
+│   ├── 03-reservation-confirmation.png
+│   └── 04-automated-test-results.png
 ├── .mvn/
 ├── .gitignore
 ├── pom.xml
@@ -336,9 +266,13 @@ stock-reservation-api/
 └── docker-compose.yml
 ```
 
----
+The exact package and folder names may vary as the project evolves.
 
 ## Limitations and Future Improvements
-- **Automatic Expiration**: Implement a background scheduler (or Redis TTL / RabbitMQ delayed exchange) to automatically expire and release reservations abandoned after a designated timeout.
-- **Distributed Locking**: For multi-node microservices deployments, transition from database row-level locking to distributed locks (e.g., Redis Redlock) or an event-sourced inventory ledger.
-- **Idempotency Keys**: Add client-supplied `Idempotency-Key` HTTP headers to safeguard against network timeouts during initial reservation creation.
+
+- Add API documentation using OpenAPI/Swagger.
+- Improve structured error responses and error status consistency.
+- Add further integration tests for concurrent confirmation and cancellation scenarios.
+- Consider database migration tooling for controlled schema changes.
+
+Update this section to reflect the actual limitations and unfinished work in the submitted version.

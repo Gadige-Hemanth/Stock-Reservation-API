@@ -34,13 +34,13 @@ public class ReservationController {
         return ResponseEntity.ok(inventoryService.getReservation(id));
     }
 
-    @PostMapping("/{id}/confirm")
+    @RequestMapping(value = "/{id}/confirm", method = {RequestMethod.POST, RequestMethod.PUT})
     @Operation(summary = "Confirm reservation", description = "Completes the sale: deducts total stock and reserved stock, setting status to CONFIRMED")
     public ResponseEntity<ReservationResponse> confirmReservation(@PathVariable Long id) {
         return ResponseEntity.ok(inventoryService.confirmReservation(id));
     }
 
-    @PostMapping("/{id}/cancel")
+    @RequestMapping(value = "/{id}/cancel", method = {RequestMethod.POST, RequestMethod.PUT})
     @Operation(summary = "Cancel reservation", description = "Releases reserved stock back to available inventory, setting status to CANCELLED")
     public ResponseEntity<ReservationResponse> cancelReservation(@PathVariable Long id) {
         return ResponseEntity.ok(inventoryService.cancelReservation(id));
