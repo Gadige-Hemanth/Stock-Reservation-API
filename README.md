@@ -148,7 +148,7 @@ The product IDs must exist in the database, and the requested quantities must be
 ### 3. Confirm a Reservation
 
 ```http
-PUT /api/reservations/{reservationId}/confirm
+POST /api/reservations/{reservationId}/confirm
 ```
 
 Confirms an active reservation. Repeating confirmation for an already confirmed reservation is intended to be idempotent.
@@ -156,7 +156,7 @@ Confirms an active reservation. Repeating confirmation for an already confirmed 
 ### 4. Cancel a Reservation
 
 ```http
-PUT /api/reservations/{reservationId}/cancel
+POST /api/reservations/{reservationId}/cancel
 ```
 
 Cancels an active reservation and releases its reserved stock. Repeating cancellation must not release stock a second time.
@@ -223,7 +223,7 @@ For the concurrency test, run:
 2. Start the Spring Boot application.
 3. Retrieve inventory using `GET /api/products`.
 4. Create a reservation using `POST /api/reservations`.
-5. Confirm it using `PUT /api/reservations/{reservationId}/confirm`, or cancel an active reservation using the cancellation endpoint.
+5. Confirm it using `POST /api/reservations/{reservationId}/confirm`, or cancel an active reservation using the cancellation endpoint.
 6. Retrieve inventory again and verify the stock changes.
 7. Run the test suite using `./mvnw test`.
 
